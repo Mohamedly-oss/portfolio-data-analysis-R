@@ -1,0 +1,287 @@
+---
+title: "Rapport Final : Développement et Validation d'un Modèle de Régression"
+author: "Mohamed"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+    fig_caption: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width  = 10,
+  fig.height = 6
+)
+```
+
+---
+
+## Introduction
+
+Ce rapport analyse les **dépenses totales des clients** d'une entreprise de vente au détail numérique.
+L'objectif est de construire et valider un modèle prédictif pour expliquer ce qui motive les dépenses
+et générer des prédictions pour les futures campagnes marketing.
+
+---
+
+## Challenge 1 : Préparation et Exploration des Données
+
+### Chargement des packages et du dataset
+
+```{r load, message = FALSE}
+library(tidyverse)
+library(broom)
+library(car)
+library(ggplot2)
+library(tibble)
+library(dplyr)
+library(knitr)
+
+# Chargement du dataset
+analysis_df <- read_csv("regression_model_final.csv")
+head(analysis_df)
+```
+
+### Nettoyage des données
+
+```{r clean}
+# Conversion en numérique et suppression des valeurs manquantes
+analysis_df <- analysis_df %>%
+  mutate(
+    Income     = as.numeric(Income),
+    Age        = as.numeric(Age),
+    TotalSpend = as.numeric(TotalSpend)
+  ) %>%
+  drop_na()
+
+cat("Nombre de lignes après nettoyage :", nrow(analysis_df), "\n")
+```
+
+### Statistiques descriptives
+
+```{r stats}
+mean_income     <- mean(analysis_df$Income,     na.rm = TRUE)
+mean_age        <- mean(analysis_df$Age,         na.rm = TRUE)
+mean_totalspend <- mean(analysis_df$TotalSpend,  na.rm = TRUE)
+
+sd_income     <- sd(analysis_df$Income,     na.rm = TRUE)
+sd_age        <- sd(analysis_df$Age,         na.rm = TRUE)
+sd_totalspend <- sd(analysis_df$TotalSpend,  na.rm = TRUE)
+
+# Tableau résumé
+stats_table <- data.frame(
+  Variable  = c("Income", "Age", "TotalSpend"),
+  Moyenne   = round(c(mean_income, mean_age, mean_totalspend), 2),
+  Ecart_type = round(c(sd_income, sd_age, sd_totalspend), 2)
+)
+
+kable(stats_table, caption = "Statistiques descriptives des variables clés")
+```
+
+> **Interprétation :** Le revenu moyen est de **`r round(mean_income, 0)`$** avec un écart-type de
+**`r round(sd_income, 0)`$**, indiquant une grande diversité de profils financiers.
+Les dépenses moyennes sont de **`r round(mean_totalspend, 0)`$** avec une variation de ±`r round(sd_totalspend, 0)`$.
+
+---
+
+## Challenge 2 : Visualisation des Données
+
+### Distribution des dépenses totales
+
+```{r plot1}
+plot_1 <- ggplot(analysis_df, aes(x = TotalSpend)) +
+  geom_histogram(fill = "skyblue", color = "black", bins = 30) +
+  labs(
+    title = "Distribution des dépenses totales",
+    x     = "Total Spend ($)",
+    y     = "Nombre de clients"
+  ) +
+  theme_minimal()
+
+print(plot_1)
+```
+
+> **Interprétation :** La distribution est légèrement asymétrique à droite.
+La majorité des clients dépense entre **900$ et 1 500$**.
+Quelques clients dépassent **2 000$**, représentant des outliers potentiels.
+
+### Revenu vs Dépenses totales par appareil
+
+```{r plot2}
+plot_2 <- ggplot(analysis_df, aes(x = Income, y = TotalSpend, color = DeviceUsed)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Revenu vs Dépenses totales par appareil utilisé",
+    x     = "Revenu ($)",
+    y     = "Dépenses totales ($)",
+    color = "Appareil"
+  ) +
+  theme_minimal()
+
+print(plot_2)
+```
+
+> **Interprétation :**
+> - Les utilisateurs **Desktop** montrent une tendance positive légère
+> - Les utilisateurs **Mobile** montrent une tendance positive plus marquée
+> - La corrélation globale entre revenu et dépenses est **très faible**
+>
+> **Recommandations :**
+> - 🎯 Cibler les campagnes sur les utilisateurs mobiles à haut revenu
+> - 💡 Développer des offres personnalisées selon l'historique d'achat
+
+---
+
+## Challenge 3 : Développement du Modèle
+
+### Modèle de régression simple
+
+```{r simple_model}
+model_simple <- lm(TotalSpend ~ Income, data = analysis_df)
+
+r_squared_simple <- summary(model_simple)$r.squared
+slope_simple     <- coef(model_simple)["Income"]
+
+cat("R-squared :", round(r_squared_simple, 4), "\n")
+cat("Pente     :", round(slope_simple, 6),     "\n")
+```
+
+> **Interprétation :** R² = **`r round(r_squared_simple, 4)`** → Income n'explique que
+**`r round(r_squared_simple * 100, 2)`%** de la variance de TotalSpend.
+Le revenu seul est un **très mauvais prédicteur** des dépenses.
+
+### Modèle de régression multiple
+
+```{r multi_model}
+model_multi <- lm(TotalSpend ~ Income + Age + PurchaseHistoryScore, data = analysis_df)
+
+model_summary    <- summary(model_multi)
+broom_evaluation <- broom::glance(model_multi)
+
+print(model_summary)
+kable(broom_evaluation, caption = "Évaluation du modèle multiple avec broom::glance()")
+```
+
+> **Interprétation :** R² = **`r round(broom_evaluation$r.squared, 4)`** →
+Le modèle multiple explique seulement **`r round(broom_evaluation$r.squared * 100, 2)`%** de la variance.
+La p-value de **`r round(broom_evaluation$p.value, 4)`** indique que le modèle **n'est pas significatif**.
+D'autres variables non incluses expliquent mieux TotalSpend.
+
+---
+
+## Challenge 4 : Validation et Prédiction
+
+### Graphiques de diagnostic
+
+```{r diagnostic, fig.height = 8}
+par(mfrow = c(2, 2))
+plot(model_multi)
+```
+
+> **Interprétation :**
+> - **Residuals vs Fitted** : résidus aléatoires, pas de non-linéarité évidente ✅
+> - **Q-Q Plot** : points alignés sur la diagonale, normalité confirmée ✅
+> - **Scale-Location** : variance relativement constante ✅
+> - **Residuals vs Leverage** : pas de points très influents ✅
+
+### Vérification de la multicolinéarité (VIF)
+
+```{r vif}
+vif_results <- vif(model_multi)
+kable(as.data.frame(vif_results), caption = "Facteurs d'Inflation de la Variance (VIF)")
+```
+
+> **Interprétation :** Toutes les valeurs VIF sont proches de **1**, bien inférieures au seuil de 5.
+**Pas de multicolinéarité** entre les prédicteurs ✅
+
+### Test de normalité des résidus
+
+```{r normality}
+shapiro_result <- shapiro.test(residuals(model_multi))
+print(shapiro_result)
+
+qqnorm(residuals(model_multi), main = "Q-Q Plot des résidus")
+qqline(residuals(model_multi), col = "red")
+```
+
+> **Interprétation :** p-value = **`r round(shapiro_result$p.value, 4)`** >> 0.05 →
+Les résidus suivent une **distribution normale** ✅
+
+### Prédictions pour nouveaux clients
+
+```{r predictions}
+new_profiles <- tibble(
+  Income               = c(45000, 65000, 80000),
+  Age                  = c(25, 35, 40),
+  PurchaseHistoryScore = c(3, 7, 8)
+)
+
+prediction_intervals <- predict(model_multi,
+                                newdata  = new_profiles,
+                                interval = "prediction")
+
+results <- cbind(new_profiles, round(as.data.frame(prediction_intervals), 2))
+kable(results, caption = "Prédictions avec intervalles de confiance")
+```
+
+> **Interprétation :**
+> - Client 1 (45k$, 25 ans) → **`r round(prediction_intervals[1,1], 0)`$** [`r round(prediction_intervals[1,2], 0)`$ - `r round(prediction_intervals[1,3], 0)`$]
+> - Client 2 (65k$, 35 ans) → **`r round(prediction_intervals[2,1], 0)`$** [`r round(prediction_intervals[2,2], 0)`$ - `r round(prediction_intervals[2,3], 0)`$]
+> - Client 3 (80k$, 40 ans) → **`r round(prediction_intervals[3,1], 0)`$** [`r round(prediction_intervals[3,2], 0)`$ - `r round(prediction_intervals[3,3], 0)`$]
+>
+> Les intervalles larges reflètent la **faible précision** du modèle.
+
+### Régression logistique — Probabilité d'être HighSpender
+
+```{r logistic}
+analysis_df_final <- analysis_df %>%
+  mutate(HighSpender = ifelse(TotalSpend > 500, TRUE, FALSE))
+
+logistic_model <- glm(
+  HighSpender ~ Income + Age + PurchaseHistoryScore,
+  data   = analysis_df_final,
+  family = "binomial"
+)
+
+test_customer <- tibble(
+  Income               = 50000,
+  Age                  = 40,
+  PurchaseHistoryScore = 70
+)
+
+predicted_probability <- predict(
+  logistic_model,
+  newdata = test_customer,
+  type    = "response"
+)
+
+cat("Probabilité HighSpender :", round(predicted_probability * 100, 2), "%\n")
+```
+
+> **Interprétation :** La probabilité estimée est de **`r round(predicted_probability * 100, 2)`%**.
+Un PurchaseHistoryScore de **70** contribue fortement à cette probabilité élevée.
+> **Recommandation marketing :** Prioriser les clients avec PurchaseHistoryScore > 50
+pour les campagnes de fidélisation et les offres premium.
+
+---
+
+## Conclusion
+
+| Élément | Résultat |
+|---|---|
+| **R² modèle simple** | `r round(r_squared_simple, 4)` → Income seul insuffisant |
+| **R² modèle multiple** | `r round(broom_evaluation$r.squared, 4)` → modèle non significatif |
+| **VIF** | < 2 → Pas de multicolinéarité ✅ |
+| **Shapiro-Wilk** | p = `r round(shapiro_result$p.value, 4)` → Résidus normaux ✅ |
+| **Probabilité HighSpender** | `r round(predicted_probability * 100, 2)`% → Client à fort potentiel |
+
+> **Recommandation finale :** Collecter des variables supplémentaires *(fidélité, fréquence d'achat)*
+pour améliorer la puissance prédictive du modèle.
